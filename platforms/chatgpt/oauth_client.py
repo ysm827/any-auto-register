@@ -4,6 +4,7 @@ OAuth 客户端模块 - 处理 Codex OAuth 登录流程
 
 import time
 import secrets
+import uuid
 from urllib.parse import urlparse, parse_qs
 from core.proxy_utils import build_requests_proxy_config
 from core.task_runtime import TaskInterruption
@@ -833,6 +834,7 @@ class OAuthClient:
         skymail_client=None,
         prefer_passwordless_login=False,
         allow_phone_verification=True,
+        force_new_browser=False,
         complete_about_you_if_needed=False,
         first_name="",
         last_name="",
@@ -873,8 +875,19 @@ class OAuthClient:
             "OAuth 策略: "
             f"prefer_passwordless_login={'on' if prefer_passwordless_login else 'off'}, "
             f"allow_phone_verification={'on' if allow_phone_verification else 'off'}, "
-            f"complete_about_you_if_needed={'on' if complete_about_you_if_needed else 'off'}"
+            f"complete_about_you_if_needed={'on' if complete_about_you_if_needed else 'off'}, "
+            f"force_new_browser={'on' if force_new_browser else 'off'}"
         )
+
+        if force_new_browser:
+            self._log("force_new_browser: 重新创建 OAuth 会话容器")
+            self._recreate_session()
+            device_id = str(uuid.uuid4())
+            self._log(f"force_new_browser: 新 device_id={device_id}")
+        else:
+            if not device_id:
+                device_id = str(uuid.uuid4())
+                self._log(f"OAuth device_id 缺失，已生成新的 device_id={device_id}")
 
         code_verifier, code_challenge = generate_pkce()
         oauth_state = secrets.token_urlsafe(32)

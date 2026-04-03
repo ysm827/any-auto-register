@@ -96,7 +96,8 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
         self.assertTrue(login_kwargs["prefer_passwordless_login"])
         self.assertFalse(login_kwargs["allow_phone_verification"])
         self.assertTrue(login_kwargs["complete_about_you_if_needed"])
-        self.assertEqual(login_kwargs["device_id"], "device-fixed")
+        self.assertTrue(login_kwargs["force_new_browser"])
+        self.assertEqual(login_kwargs["device_id"], "")
         self.assertEqual(login_kwargs["login_source"], "post_register_workspace_recovery")
 
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthManager")
