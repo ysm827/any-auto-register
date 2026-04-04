@@ -24,6 +24,10 @@ KEY_INFO_CANDIDATES: list[tuple[str, str]] = [
     ("POST", "/public/key-info"),
     ("POST", "/public/key/info"),
 ]
+REDEEM_CANDIDATES: list[tuple[str, str]] = [
+    ("POST", "/public/redeem"),
+    ("POST", "/api/contribution/redeem"),
+]
 
 
 class ContributionProxyRequest(BaseModel):
@@ -94,14 +98,27 @@ def _request_json(
         data = {"raw": response.text}
 
     if response.status_code >= 400:
-        detail = data
+        detail: Any = data
         if isinstance(data, dict):
-            detail = data.get("error") or data.get("message") or data
+            detail = data.get("detail") or data.get("error") or data.get("message") or data
+            if isinstance(detail, dict):
+                detail = detail.get("message") or detail.get("error") or detail.get("code") or json_dumps_safe(detail)
+        if not isinstance(detail, str):
+            detail = json_dumps_safe(detail)
         raise HTTPException(status_code=response.status_code, detail=detail)
 
     if isinstance(data, dict):
         return data
     return {"data": data}
+
+
+def json_dumps_safe(value: Any) -> str:
+    try:
+        import json
+
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
 
 
 @router.post("/quota-stats")
@@ -221,16 +238,48 @@ def get_key_info(body: ContributionProxyRequest):
 def redeem(body: ContributionRedeemRequest):
     server_url = _resolve_server_url(body.server_url)
     key = _resolve_key(body.key)
-    data = _request_json(
-        "POST",
-        server_url,
-        "/public/redeem",
-        key,
-        payload={"amount_usd": body.amount_usd},
-    )
+    attempts: list[dict[str, Any]] = []
+    data: dict[str, Any] | None = None
+    endpoint_hit = ""
+
+    for method, endpoint in REDEEM_CANDIDATES:
+        try:
+            data = _request_json(
+                method,
+                server_url,
+                endpoint,
+                key,
+                payload={"amount_usd": body.amount_usd},
+            )
+            endpoint_hit = endpoint
+            break
+        except HTTPException as exc:
+            attempts.append(
+                {
+                    "method": method,
+                    "endpoint": endpoint,
+                    "status_code": exc.status_code,
+                    "detail": exc.detail,
+                }
+            )
+
+    if data is None:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "调用提现接口失败，请确认 codex2api 是否已启用 /public/redeem",
+                "attempts": attempts,
+            },
+        )
+
+    redeemed_amount = data.get("redeemed_amount_usd")
+    redeem_code = data.get("code")
     return {
         "ok": True,
-        "endpoint": "/public/redeem",
+        "endpoint": endpoint_hit or "/public/redeem",
+        "redeemed_amount_usd": redeemed_amount,
+        "code": redeem_code,
+        "message": f"提现成功！额度：{redeemed_amount if redeemed_amount is not None else '-'} 兑换码：{redeem_code or '-'}",
         "data": data,
     }
 

@@ -1106,6 +1106,13 @@ function ContributionPanel({
   const serverQuotaUsedPercent = pickNumber(serverInfo, ['quota_used_percent'])
   const serverQuotaRemainingPercent = pickNumber(serverInfo, ['quota_remaining_percent'])
   const serverQuotaRemainingAccounts = pickNumber(serverInfo, ['quota_remaining_accounts'])
+  const redeemData = asRecord(redeemResponse?.['data']) || asRecord(redeemResponse)
+  const redeemCode = pickString(redeemData, ['code', 'redeem_code', 'voucher_code'])
+  const redeemedAmountUSD = pickNumber(redeemData, ['redeemed_amount_usd', 'redeemed_amount', 'amount_usd'])
+  const redeemSuccessText =
+    redeemResponse
+      ? `提现成功！额度：${redeemedAmountUSD !== null ? formatDisplayNumber(redeemedAmountUSD, 2) : '-'} 兑换码：${redeemCode || '-'}`
+      : ''
 
   const fetchStats = async (silent = false, keyOverride?: string) => {
     if (!contributionEnabled) {
@@ -1172,11 +1179,21 @@ function ContributionPanel({
               amount_usd: redeemAmount,
             }),
           })
-          setRedeemResponse(asRecord(data))
-          message.success('提现请求已提交')
+          const result = asRecord(data)
+          const payload = asRecord(result?.['data']) || result
+          const code = pickString(payload, ['code', 'redeem_code', 'voucher_code'])
+          const amount = pickNumber(payload, ['redeemed_amount_usd', 'redeemed_amount', 'amount_usd'])
+          setRedeemResponse(result)
+          if (amount !== null || code) {
+            message.success(`提现成功！额度：${amount !== null ? formatDisplayNumber(amount, 2) : '-'} 兑换码：${code || '-'}`)
+          } else {
+            message.success('提现成功')
+          }
           await fetchStats(true)
         } catch (e: any) {
-          message.error(String(e?.message || '提现失败'))
+          const detail = String(e?.message || '提现失败')
+          setRedeemResponse({ ok: false, error: detail })
+          message.error(detail)
         } finally {
           setRedeeming(false)
         }
@@ -1323,7 +1340,12 @@ function ContributionPanel({
             提现确认
           </Button>
           {redeemResponse ? (
-            <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{formatResultText(redeemResponse)}</pre>
+            <Alert
+              type={redeemResponse.ok === false ? 'error' : 'success'}
+              showIcon
+              message={redeemResponse.ok === false ? `提现失败：${String(redeemResponse.error || '-')}` : redeemSuccessText}
+              description={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{formatResultText(redeemResponse)}</pre>}
+            />
           ) : null}
         </Space>
       </Card>
